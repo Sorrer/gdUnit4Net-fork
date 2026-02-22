@@ -1,0 +1,35 @@
+name: Publish NuGet Packages
+
+on:
+  push:
+    branches: [fix/pipe-eof-and-stop-timeout, master]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Build Api
+        run: dotnet build Api/GdUnit4Api.csproj -c Release
+
+      - name: Build TestAdapter
+        run: dotnet build TestAdapter/GdUnit4TestAdapter.csproj -c Release
+
+      - name: Push packages to GitHub Packages
+        run: |
+          dotnet nuget push Api/nupkg/*.nupkg \
+            --source "https://nuget.pkg.github.com/Sorrer/index.json" \
+            --api-key ${{ secrets.GITHUB_TOKEN }} \
+            --skip-duplicate
+          dotnet nuget push TestAdapter/nupkg/*.nupkg \
+            --source "https://nuget.pkg.github.com/Sorrer/index.json" \
+            --api-key ${{ secrets.GITHUB_TOKEN }} \
+            --skip-duplicate
