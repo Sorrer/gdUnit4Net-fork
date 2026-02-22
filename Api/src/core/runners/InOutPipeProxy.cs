@@ -56,12 +56,14 @@ internal class InOutPipeProxy<TPipe> : IAsyncDisposable
         var responseLengthBytes = new byte[4];
         await ReadExactBytesAsync(responseLengthBytes, 0, 4, cancellationToken)
             .ConfigureAwait(false);
-        if (cancellationToken.IsCancellationRequested)
+        if (cancellationToken.IsCancellationRequested || !IsConnected)
         {
             return new Response
             {
                 StatusCode = HttpStatusCode.Gone,
-                Payload = "Connection interrupted by cancellation requested."
+                Payload = cancellationToken.IsCancellationRequested
+                    ? "Connection interrupted by cancellation requested."
+                    : "Connection closed by remote end (EOF)."
             };
         }
 
@@ -69,12 +71,14 @@ internal class InOutPipeProxy<TPipe> : IAsyncDisposable
         var responseBytes = new byte[responseLength];
         await ReadExactBytesAsync(responseBytes, 0, responseLength, cancellationToken)
             .ConfigureAwait(false);
-        if (cancellationToken.IsCancellationRequested)
+        if (cancellationToken.IsCancellationRequested || !IsConnected)
         {
             return new Response
             {
                 StatusCode = HttpStatusCode.Gone,
-                Payload = "Connection interrupted by cancellation requested."
+                Payload = cancellationToken.IsCancellationRequested
+                    ? "Connection interrupted by cancellation requested."
+                    : "Connection closed by remote end (EOF)."
             };
         }
 
@@ -166,6 +170,13 @@ internal class InOutPipeProxy<TPipe> : IAsyncDisposable
                 var bytesRead = await Pipe
                     .ReadAsync(buffer.AsMemory(offset + totalBytesRead, count - totalBytesRead), cancellationToken)
                     .ConfigureAwait(false);
+                if (bytesRead == 0)
+                {
+                    // EOF — remote end closed the pipe
+                    Pipe.Close();
+                    break;
+                }
+
                 totalBytesRead += bytesRead;
             }
             catch (OperationCanceledException)
@@ -175,7 +186,5 @@ internal class InOutPipeProxy<TPipe> : IAsyncDisposable
                 break;
             }
         }
-
-        // Console.WriteLine($"{typeof(TPipe)} Read {count} bytes from {totalBytesRead} of {count}, {IsConnected}");
     }
 }

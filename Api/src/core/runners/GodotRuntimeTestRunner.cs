@@ -152,18 +152,37 @@ internal sealed class GodotRuntimeTestRunner : BaseTestRunner
 
             base.RunAndWait(testSuiteNodes, eventListener, cancellationToken);
 
-            _ = process.WaitForExit(2000);
-
-            // wait until the process has finished
-            var waitRetry = 0;
-            while (!process.HasExited && waitRetry++ < 10)
-                Thread.Sleep(100);
-
-            // If the process not finished until 10 retries, we kill it manually
-            if (!process.HasExited)
+            // Graceful shutdown: give Godot time to exit cleanly after SceneTree.Quit()
+            if (!process.WaitForExit(3000))
             {
-                Logger.LogInfo("GdUnit4 Godot Runtime Test Runner is not terminated, force process kill.");
-                process.Kill(true);
+                // SIGTERM (non-entire-tree kill) — let the process clean up
+                Logger.LogInfo("GdUnit4 Godot Runtime Test Runner still running after 3s, sending SIGTERM...");
+                try
+                {
+                    process.Kill(false);
+                }
+#pragma warning disable CA1031
+                catch (Exception)
+#pragma warning restore CA1031
+                {
+                    // Process may have exited between check and kill
+                }
+
+                if (!process.WaitForExit(2000))
+                {
+                    // SIGKILL (entire process tree) — force termination
+                    Logger.LogInfo("GdUnit4 Godot Runtime Test Runner still running after SIGTERM, force killing...");
+                    try
+                    {
+                        process.Kill(true);
+                    }
+#pragma warning disable CA1031
+                    catch (Exception)
+#pragma warning restore CA1031
+                    {
+                        // Process may have exited between check and kill
+                    }
+                }
             }
 
             CloseProcess(process);

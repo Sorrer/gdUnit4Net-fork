@@ -55,19 +55,45 @@ internal sealed class GodotRuntimeExecutor : InOutPipeProxy<NamedPipeClientStrea
         try
         {
             Logger.LogInfo("Stop GodotRuntimeExecutor");
-            _ = await ExecuteCommand(new TerminateGodotInstanceCommand(), new NoInteractTestEventListener(), CancellationToken.None)
-                .ConfigureAwait(true);
+
+            // Use a 5-second timeout — Godot process may already be exiting/dead,
+            // in which case the pipe read will EOF and return Gone immediately.
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                _ = await ExecuteCommand(new TerminateGodotInstanceCommand(), new NoInteractTestEventListener(), cts.Token)
+                    .ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected — Godot process likely already exited before responding
+                Logger.LogInfo("Stop command timed out (Godot process likely already exited).");
+            }
 
             // Give server time to process shutdown
             await Task
                 .Delay(100)
                 .ConfigureAwait(true);
-            await DisposeAsync().ConfigureAwait(false);
         }
+#pragma warning disable CA1031
         catch (Exception e)
+#pragma warning restore CA1031
         {
-            Logger.LogError($"Stop GodotRuntimeExecutor failed.\n{e}");
-            throw;
+            // Swallow errors during shutdown — we're tearing down anyway
+            Logger.LogInfo($"Stop GodotRuntimeExecutor encountered error (non-fatal during shutdown): {e.Message}");
+        }
+        finally
+        {
+            try
+            {
+                await DisposeAsync().ConfigureAwait(false);
+            }
+#pragma warning disable CA1031
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+                // Ignore dispose errors during shutdown
+            }
         }
     }
 
