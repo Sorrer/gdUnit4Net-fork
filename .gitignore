@@ -1,3 +1,6 @@
+# Build stamp (written by parent project's SubmoduleManager MSBuild target)
+.nupkg-built-sha
+
 # Project-specific ignores
 .history
 .idea
